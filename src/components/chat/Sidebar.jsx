@@ -1,11 +1,19 @@
-import { MessageCircle, Users, Settings, HelpCircle, LogOut } from "lucide-react";
+import { MessageCircle, Users, Settings, HelpCircle, LogOut, Shield } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 export default function Sidebar({ active = "chat", setActive }) {
+    const role = (localStorage.getItem("role") || "").toLowerCase();
+    const isAdmin = role === "admin";
     const menu = [
         { key: "chat", label: "Chat", icon: MessageCircle },
         { key: "friends", label: "Friends", icon: Users },
         { key: "settings", label: "Settings", icon: Settings },
     ];
+    const handleMenuClick = (key) => {
+        setActive?.(key);
+        if (key === "chat") navigate("/chat");
+        if (key === "admin") navigate("/admin");
+    };
+
     const navigate = useNavigate();
 
     const handleLogout = () => {
@@ -37,7 +45,7 @@ export default function Sidebar({ active = "chat", setActive }) {
                         return (
                             <button
                                 key={item.key}
-                                onClick={() => setActive?.(item.key)}
+                                onClick={() => handleMenuClick(item.key)}
                                 className={`flex items-center gap-3 px-4 py-2.5 rounded-xl text-sm transition-all
                   ${isActive
                                         ? "bg-white shadow text-indigo-600 font-semibold"
