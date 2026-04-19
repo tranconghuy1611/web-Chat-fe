@@ -10,14 +10,13 @@ import {
   removeGroupMember,
   updateGroup,
 } from "../services/adminGroupApi";
-
+import UsersPage from "../components/admin/UsersPage";
 function StatusPill({ role }) {
   const isAdmin = role === "admin";
   return (
     <span
-      className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${
-        isAdmin ? "bg-violet-50 text-violet-700" : "bg-slate-100 text-slate-600"
-      }`}
+      className={`text-[11px] font-medium px-2 py-0.5 rounded-full ${isAdmin ? "bg-violet-50 text-violet-700" : "bg-slate-100 text-slate-600"
+        }`}
     >
       {isAdmin ? "Quản trị" : "Thành viên"}
     </span>
@@ -149,11 +148,10 @@ function GroupsPage() {
           <button
             key={g.id}
             onClick={() => setSelectedId(g.id)}
-            className={`w-full text-left px-3.5 py-3 rounded-xl border transition-all ${
-              g.id === selectedId
+            className={`w-full text-left px-3.5 py-3 rounded-xl border transition-all ${g.id === selectedId
                 ? "border-blue-200 bg-blue-50"
                 : "border-slate-100 bg-white hover:border-slate-200"
-            }`}
+              }`}
           >
             <div className="text-[13px] font-semibold text-slate-700">{g.name}</div>
             <div className="text-[11px] text-slate-400 mt-0.5">Nhóm chat</div>
@@ -275,17 +273,20 @@ function GroupsPage() {
 }
 
 export default function AdminManagement() {
-  const [activePage, setActivePage] = useState("groups");
+  const [activePage, setActivePage] = useState("");
 
   return (
     <div className="flex h-screen bg-slate-50 overflow-hidden">
       <SidebarAdmin active={activePage} onNav={setActivePage} />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <header className="h-14 bg-white border-b border-slate-100 flex items-center px-6">
-          <h1 className="text-[15px] font-semibold text-slate-800">Quản lý nhóm</h1>
+          <h1 className="text-[15px] font-semibold text-slate-800"> 
+            {activePage === "groups" ? "Quản lý nhóm" : "Quản lý người dùng"}
+          </h1>
         </header>
         <main className="flex-1 overflow-y-auto p-6">
-          <GroupsPage />
+          {activePage === "groups" && <GroupsPage />}
+          {activePage === "users" && <UsersPage />}
         </main>
       </div>
     </div>

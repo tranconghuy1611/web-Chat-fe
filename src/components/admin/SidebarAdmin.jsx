@@ -1,5 +1,8 @@
 import { useNavigate } from "react-router-dom";
-const NAV_ITEMS = [{ id: "groups", label: "Quản lý nhóm" }];
+const NAV_ITEMS = [
+  { id: "groups", label: "Quản lý nhóm" },
+  { id: "users", label: "Quản lý người dùng" }
+];
 
 export default function SidebarAdmin({ active, onNav }) {
    const navigate = useNavigate();
