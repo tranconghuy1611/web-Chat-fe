@@ -9,8 +9,9 @@ import {
   subscribeRoom,
   unsubscribeAll,
 } from "../services/ws";
-import { getMe } from "../services/userApi";
-import { getMyRooms, getRoomMessages } from "../services/roomApi";
+import { getMe, searchUsers } from "../services/userApi";
+import { getMyRooms, getRoomMessages, createRoom } from "../services/roomApi";
+import { formatTime, formatDateLabel } from "../until/time.js";
 
 export default function Chat() {
   const [currentUser, setCurrentUser] = useState(null);
@@ -28,7 +29,12 @@ export default function Chat() {
   const selectedUserRef = useRef(null);
   const selectedRoomRef = useRef(null);
   const currentUserRef = useRef(null);
+  let lastDate = null;
 
+
+  const sortedMessages = [...messages].sort(
+    (a, b) => new Date(a.createdAt) - new Date(b.createdAt)
+  );
   const getMessageKey = (m) =>
     m.id ||
     `${m.sender}|${m.receiver || ""}|${m.roomId || ""}|${m.content}|${m.createdAt || ""
@@ -144,15 +150,8 @@ export default function Chat() {
 
     const timer = setTimeout(async () => {
       try {
-        const token = localStorage.getItem("token");
-        const res = await axios.get(
-          "http://192.168.1.13:8080/api/users/search",
-          {
-            params: { keyword: q },
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
-        setUsers(res.data);
+        const data = await searchUsers(q); // ✅ bỏ token
+        setUsers(data); // ✅ không .data nữa
       } catch (err) {
         console.error(err);
       }
@@ -222,20 +221,10 @@ export default function Chat() {
     // ❌ Nếu chưa có room → tạo
     if (!matchedPrivateRoom) {
       try {
-        const token = localStorage.getItem("token");
-
-        const res = await axios.post(
-          "http://192.168.1.13:8080/api/rooms",
-          {
-            roomName: `${currentUser.username}-${user.username}`,
-            users: [currentUser.username, user.username],
-          },
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
-
-        const newRoom = res.data;
+        const newRoom = await createRoom({
+          roomName: `${currentUser.username}-${user.username}`,
+          users: [currentUser.username, user.username],
+        });
 
         matchedPrivateRoom = {
           roomId: newRoom.roomId,
@@ -253,10 +242,10 @@ export default function Chat() {
     // ✅ set room
     setSelectedRoom(matchedPrivateRoom);
 
-    // ✅ QUAN TRỌNG: tránh delay React
+    // ✅ tránh delay React
     selectedRoomRef.current = matchedPrivateRoom;
 
-    // ✅ QUAN TRỌNG: realtime ngay
+    // ✅ realtime ngay
     subscribeRoom(matchedPrivateRoom.roomId);
 
     // clear unread
@@ -296,36 +285,44 @@ export default function Chat() {
     <div className="flex h-screen bg-gray-50">
       <Sidebar />
 
-      <div className="flex flex-1">
+      <div className="flex flex-1 overflow-hidden">
         {/* LEFT PANEL */}
-        <div className="w-80 border-r bg-white flex flex-col">
-          <div className="p-4 font-bold border-b">
-            {keyword.trim().length < 2 ? "Phòng của bạn" : "Users"}
+        <div className="w-72 border-r bg-white flex flex-col">
+
+          {/* Header */}
+          <div className="px-4 pt-5 pb-3 border-b">
+            <h2 className="text-base font-semibold text-gray-800 mb-3">
+              {keyword.trim().length < 2 ? "Tin nhắn" : "Người dùng"}
+            </h2>
+            <div className="flex items-center gap-2 bg-gray-100 rounded-xl px-3 py-2">
+              <svg className="w-4 h-4 text-gray-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
+              </svg>
+              <input
+                className="bg-transparent text-sm outline-none flex-1 placeholder:text-gray-400 text-gray-800"
+                placeholder="Tìm kiếm..."
+                value={keyword}
+                onChange={(e) => setKeyword(e.target.value)}
+              />
+            </div>
           </div>
 
-          <input
-            className="mx-3 my-3 px-4 py-2 bg-gray-100 rounded-lg"
-            placeholder="Tìm kiếm..."
-            value={keyword}
-            onChange={(e) => setKeyword(e.target.value)}
-          />
-
-          <div className="flex-1 overflow-auto">
+          {/* List */}
+          <div className="flex-1 overflow-auto divide-y divide-gray-50">
             {keyword.trim().length < 2
               ? rooms.map((room) => (
                 <div
                   key={room.roomId}
                   onClick={() => handleSelectRoom(room)}
-                  className={`p-4 cursor-pointer hover:bg-gray-100 ${selectedRoom?.roomId === room.roomId
-                    ? "bg-blue-50"
-                    : ""
+                  className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors ${selectedRoom?.roomId === room.roomId ? "bg-indigo-50" : ""
                     }`}
                 >
-                  <div className="font-medium">
-                    {room.roomName}
+                  <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-sm font-medium shrink-0">
+                    {room.roomName?.slice(0, 2).toUpperCase()}
                   </div>
-                  <div className="text-sm text-gray-500">
-                    {room.roomId}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800 truncate">{room.roomName}</p>
+                    <p className="text-xs text-gray-400 truncate">#{room.roomId}</p>
                   </div>
                 </div>
               ))
@@ -333,55 +330,69 @@ export default function Chat() {
                 <div
                   key={u.username}
                   onClick={() => handleSelectUser(u)}
-                  className={`p-4 cursor-pointer hover:bg-gray-100 flex justify-between ${selectedUser?.username === u.username
-                    ? "bg-blue-50"
-                    : ""
+                  className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors ${selectedUser?.username === u.username ? "bg-indigo-50" : ""
                     }`}
                 >
-                  <div>
-                    <div>{u.username}</div>
-                    <div className="text-sm text-gray-500">
-                      {u.fullname}
+                  <div className="relative">
+                    <div className="w-10 h-10 rounded-full bg-violet-100 text-violet-600 flex items-center justify-center text-sm font-medium shrink-0">
+                      {u.username?.slice(0, 2).toUpperCase()}
                     </div>
+                    {unreadSenders.has(u.username) && (
+                      <span className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full bg-indigo-500 border-2 border-white" />
+                    )}
                   </div>
-                  {unreadSenders.has(u.username) && (
-                    <div className="w-3 h-3 bg-blue-500 rounded-full" />
-                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800 truncate">{u.username}</p>
+                    <p className="text-xs text-gray-400 truncate">{u.fullname}</p>
+                  </div>
                 </div>
               ))}
           </div>
         </div>
 
         {/* CHAT AREA */}
-        <div className="flex-1 flex flex-col">
+        <div className="flex-1 flex flex-col min-w-0">
           {!selectedUser && !selectedRoom ? (
-            <div className="flex-1 flex items-center justify-center text-gray-400">
-              Chọn user hoặc room
+            <div className="flex-1 flex flex-col items-center justify-center gap-3 text-gray-400">
+              <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center">
+                <svg className="w-7 h-7 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
+              </div>
+              <p className="text-sm">Chọn cuộc trò chuyện để bắt đầu</p>
             </div>
           ) : (
             <>
               {/* HEADER */}
-              <div className="p-4 border-b bg-white">
-                <div className="font-semibold">
-                  {selectedUser
-                    ? selectedUser.username
-                    : selectedRoom.roomName}
+              <div className="flex items-center gap-3 px-5 py-3 border-b bg-white">
+                <div className="w-9 h-9 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-sm font-medium shrink-0">
+                  {(selectedUser ? selectedUser.username : selectedRoom.roomName)?.slice(0, 2).toUpperCase()}
                 </div>
-                {!selectedUser && selectedRoom && (
-                  <div className="text-xs text-gray-500 mt-0.5">
-                    Chat nhóm · {selectedRoom.roomId}
-                  </div>
-                )}
-                {selectedUser && (
-                  <div className="text-xs text-gray-500 mt-0.5">
-                    Chat riêng
-                  </div>
-                )}
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-semibold text-gray-800 truncate">
+                    {selectedUser ? selectedUser.username : selectedRoom.roomName}
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    {selectedUser ? "Chat riêng" : `Chat nhóm · ${selectedRoom.roomId}`}
+                  </p>
+                </div>
+                <div className="flex gap-1">
+                  <button className="w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-500 transition-colors">
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 1.28h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 8a16 16 0 0 0 6 6l.27-.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 21 16z" />
+                    </svg>
+                  </button>
+                  <button className="w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-500 transition-colors">
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <circle cx="12" cy="12" r="1" /><circle cx="19" cy="12" r="1" /><circle cx="5" cy="12" r="1" />
+                    </svg>
+                  </button>
+                </div>
               </div>
 
               {/* MESSAGES */}
-              <div className="flex-1 p-4 overflow-auto space-y-3 bg-gray-50">
-                {messages
+              <div className="flex-1 overflow-auto px-5 py-4 space-y-3 bg-gray-50">
+                {sortedMessages
                   .filter((m) => {
                     if (selectedUser) {
                       return (
@@ -396,31 +407,64 @@ export default function Chat() {
                     }
                     return false;
                   })
-                  .map((msg) => {
-                    const isMe =
-                      msg.sender === currentUser?.username;
+                  .map((msg, index, arr) => {
+                    const isMe = msg.sender === currentUser?.username;
+
+                    // 🧠 check ngày trước đó
+                    const currentDate = new Date(msg.createdAt).toDateString();
+                    const prevDate =
+                      index > 0
+                        ? new Date(arr[index - 1].createdAt).toDateString()
+                        : null;
+
+                    const showDateDivider = currentDate !== prevDate;
 
                     return (
-                      <div
-                        key={getMessageKey(msg)}
-                        className={`flex ${isMe
-                          ? "justify-end"
-                          : "justify-start"
-                          }`}
-                      >
+                      <div key={getMessageKey(msg)}>
+                        {/* ✅ Divider ngày */}
+                        {showDateDivider && (
+                          <div className="text-center my-3">
+                            <span className="text-xs px-3 py-1 bg-gray-200 rounded-full text-gray-600">
+                              {formatDateLabel(msg.createdAt)}
+                            </span>
+                          </div>
+                        )}
+
+                        {/* 💬 Message */}
                         <div
-                          className={`max-w-[70%] px-4 py-2 rounded-xl ${isMe
-                            ? "bg-indigo-600 text-white"
-                            : "bg-white border"
+                          className={`flex gap-2 items-end ${isMe ? "flex-row-reverse" : ""
                             }`}
                         >
-                          <div>{msg.content}</div>
-
-                          {selectedRoom && !isMe && (
-                            <div className="text-xs text-gray-400 mt-1">
-                              {msg.sender}
+                          {!isMe && (
+                            <div className="w-7 h-7 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs font-medium shrink-0">
+                              {msg.sender?.slice(0, 2).toUpperCase()}
                             </div>
                           )}
+
+                          <div
+                            className={`max-w-[65%] px-4 py-2.5 text-sm leading-relaxed ${isMe
+                                ? "bg-indigo-600 text-white rounded-2xl rounded-br-sm"
+                                : "bg-white border border-gray-100 text-gray-800 rounded-2xl rounded-bl-sm"
+                              }`}
+                          >
+                            {selectedRoom && !isMe && (
+                              <p className="text-xs font-medium mb-1 opacity-60">
+                                {msg.sender}
+                              </p>
+                            )}
+
+                            {msg.content}
+
+                            {/* 🕒 giờ */}
+                            <p
+                              className={`text-[10px] mt-1 ${isMe
+                                  ? "text-white/70 text-right"
+                                  : "text-gray-400 text-left"
+                                }`}
+                            >
+                              {msg.createdAt && formatTime(msg.createdAt)}
+                            </p>
+                          </div>
                         </div>
                       </div>
                     );
@@ -428,20 +472,34 @@ export default function Chat() {
               </div>
 
               {/* INPUT */}
-              <div className="p-4 border-t bg-white flex gap-2">
+              <div className="px-4 py-3 border-t bg-white flex items-center gap-2">
+                <button className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-400 transition-colors shrink-0">
+                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                  </svg>
+                </button>
+                <button className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-400 transition-colors shrink-0">
+                  <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="10" />
+                    <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+                    <line x1="9" x2="9.01" y1="9" y2="9" />
+                    <line x1="15" x2="15.01" y1="9" y2="9" />
+                  </svg>
+                </button>
                 <input
-                  className="flex-1 border rounded-xl px-4 py-2"
+                  className="flex-1 bg-gray-100 rounded-2xl px-4 py-2.5 text-sm outline-none focus:ring-2 focus:ring-indigo-300 transition text-gray-800 placeholder:text-gray-400"
+                  placeholder="Nhập tin nhắn..."
                   value={content}
                   onChange={(e) => setContent(e.target.value)}
-                  onKeyDown={(e) =>
-                    e.key === "Enter" && handleSend()
-                  }
+                  onKeyDown={(e) => e.key === "Enter" && handleSend()}
                 />
                 <button
                   onClick={handleSend}
-                  className="bg-indigo-600 text-white px-6 rounded-xl"
+                  className="w-9 h-9 rounded-full bg-indigo-600 hover:bg-indigo-700 active:scale-95 text-white flex items-center justify-center transition shrink-0"
                 >
-                  Gửi
+                  <svg className="w-4 h-4 translate-x-px" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <path d="m22 2-7 20-4-9-9-4 20-7z" /><path d="M22 2 11 13" />
+                  </svg>
                 </button>
               </div>
             </>
