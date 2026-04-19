@@ -1,6 +1,20 @@
+import { useNavigate } from "react-router-dom";
 const NAV_ITEMS = [{ id: "groups", label: "Quản lý nhóm" }];
 
 export default function SidebarAdmin({ active, onNav }) {
+   const navigate = useNavigate();
+
+  const handleLogout = () => {
+    // Xóa dữ liệu login
+    localStorage.removeItem("token");
+    localStorage.removeItem("userId");
+    localStorage.removeItem("username");
+    localStorage.removeItem("fullname");
+    localStorage.removeItem("role");
+
+    // Chuyển về login
+    navigate("/");
+  }
   return (
     <aside className="w-60 min-w-[240px] bg-[#0d1b2a] flex flex-col h-full">
       <div className="flex items-center gap-3 px-5 py-5 border-b border-white/[0.07]">
@@ -52,6 +66,12 @@ export default function SidebarAdmin({ active, onNav }) {
             <div className="text-white/35 text-[11px]">Group Manager</div>
           </div>
         </div>
+        <button
+          onClick={handleLogout}
+          className="w-full mt-2 text-[12px] font-medium px-3 py-2 rounded-lg border border-red-400 text-red-400 hover:bg-red-500 hover:text-white transition"
+        >
+          Đăng xuất
+        </button>
       </div>
     </aside>
   );

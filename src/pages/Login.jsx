@@ -56,7 +56,11 @@ export default function Login() {
       localStorage.setItem("role", res.role);
 
       console.log("✅ Đăng nhập thành công, chuyển trang...");
-      navigate("/chat");
+      if (res.role === "ADMIN") {
+        navigate("/admin");
+      } else {
+        navigate("/chat");
+      }
 
     } catch (err) {
       console.error("Login error:", err);

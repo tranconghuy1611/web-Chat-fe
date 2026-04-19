@@ -31,8 +31,7 @@ export default function Chat() {
 
   const getMessageKey = (m) =>
     m.id ||
-    `${m.sender}|${m.receiver || ""}|${m.roomId || ""}|${m.content}|${
-      m.createdAt || ""
+    `${m.sender}|${m.receiver || ""}|${m.roomId || ""}|${m.content}|${m.createdAt || ""
     }`;
 
   const appendUniqueMessage = (prev, msg) => {
@@ -87,16 +86,34 @@ export default function Chat() {
   useEffect(() => {
     if (!currentUser) return;
 
-    const unsubscribe = connectWebSocket((msg) => {
+    const unsubscribe = connectWebSocket(async (msg) => {
       setMessages((prev) => appendUniqueMessage(prev, msg));
 
       // Dang xem dung phong: khong tang unread
-      if (
-        msg.roomId &&
-        selectedRoomRef.current?.roomId === msg.roomId
-      ) {
-        return;
+      if (msg.roomId && msg.receiver && !selectedRoomRef.current?.roomId) {
+        const data = await getMyRooms();
+        setRooms(data);
+
+        const peer =
+          msg.sender === currentUserRef.current?.username
+            ? msg.receiver
+            : msg.sender;
+
+        if (peer === selectedUserRef.current?.username) {
+          const newRoom = data.find((r) => r.roomId === msg.roomId);
+          if (newRoom) {
+            setSelectedRoom(newRoom);           // ✅ gắn room
+            subscribeRoom(newRoom.roomId);      // ✅ subscribe realtime luôn
+            selectedRoomRef.current = newRoom;  // ✅ cập nhật ref ngay, không chờ re-render
+          }
+        }
       }
+      // if (
+      //   msg.roomId &&
+      //   selectedRoomRef.current?.roomId === msg.roomId
+      // ) {
+      //   return;
+      // }
 
       // Tin nhom (receiver null): khong gan badge len danh sach user
       if (!msg.receiver) return;
@@ -129,7 +146,7 @@ export default function Chat() {
       try {
         const token = localStorage.getItem("token");
         const res = await axios.get(
-          "http://localhost:8080/api/users/search",
+          "http://192.168.1.13:8080/api/users/search",
           {
             params: { keyword: q },
             headers: { Authorization: `Bearer ${token}` },
@@ -186,15 +203,63 @@ export default function Chat() {
       unsubscribeAll();
     };
   }, [selectedRoom?.roomId]);
+  const handleSelectRoom = (room) => {
+    setSelectedRoom(room);
+    setSelectedUser(null);
 
+    // ✅ fix realtime ngay lập tức
+    selectedRoomRef.current = room;
+    subscribeRoom(room.roomId);
+  };
   // ================= HANDLE SELECT =================
-  const handleSelectUser = (user) => {
+  const handleSelectUser = async (user) => {
     setSelectedUser(user);
-    const matchedPrivateRoom = rooms.find((room) =>
+
+    let matchedPrivateRoom = rooms.find((room) =>
       roomContainsUsername(room, user.username)
     );
-    setSelectedRoom(matchedPrivateRoom || null);
 
+    // ❌ Nếu chưa có room → tạo
+    if (!matchedPrivateRoom) {
+      try {
+        const token = localStorage.getItem("token");
+
+        const res = await axios.post(
+          "http://192.168.1.13:8080/api/rooms",
+          {
+            roomName: `${currentUser.username}-${user.username}`,
+            users: [currentUser.username, user.username],
+          },
+          {
+            headers: { Authorization: `Bearer ${token}` },
+          }
+        );
+
+        const newRoom = res.data;
+
+        matchedPrivateRoom = {
+          roomId: newRoom.roomId,
+          roomName: newRoom.roomName,
+          usernames: [currentUser.username, user.username],
+        };
+
+        setRooms((prev) => [...prev, matchedPrivateRoom]);
+      } catch (err) {
+        console.error("Create room failed", err);
+        return;
+      }
+    }
+
+    // ✅ set room
+    setSelectedRoom(matchedPrivateRoom);
+
+    // ✅ QUAN TRỌNG: tránh delay React
+    selectedRoomRef.current = matchedPrivateRoom;
+
+    // ✅ QUAN TRỌNG: realtime ngay
+    subscribeRoom(matchedPrivateRoom.roomId);
+
+    // clear unread
     setUnreadSenders((prev) => {
       const newSet = new Set(prev);
       newSet.delete(user.username);
@@ -202,54 +267,26 @@ export default function Chat() {
     });
   };
 
-  const handleSelectRoom = (room) => {
-    setSelectedRoom(room);
-    setSelectedUser(null);
-  };
-
   // ================= SEND MESSAGE =================
   const handleSend = () => {
     const trimmed = content.trim();
     if (!trimmed || !currentUser) return;
-
+    if (selectedUser && !selectedRoom) {
+      console.warn("Room chưa sẵn sàng");
+      return;
+    }
     // PRIVATE
     if (selectedUser) {
-      if (!selectedRoom?.roomId) {
-        console.warn("Private room not found for selected user");
-        return;
-      }
-      const success = sendPrivateMessage({
+      sendPrivateMessage({
         receiver: selectedUser.username,
-        roomId: selectedRoom.roomId,
+        roomId: selectedRoom?.roomId, // ✅ truyền null nếu chưa có room
         content: trimmed,
       });
-
-      if (success) {
-        setMessages((prev) =>
-          appendUniqueMessage(prev, {
-            sender: currentUser.username,
-            receiver: selectedUser.username,
-            roomId: selectedRoom.roomId,
-            content: trimmed,
-            createdAt: new Date().toISOString(),
-          })
-        );
-      }
     }
 
     // ROOM
     else if (selectedRoom) {
-      const success = sendRoomMessage(selectedRoom.roomId, trimmed);
-      if (success) {
-        setMessages((prev) =>
-          appendUniqueMessage(prev, {
-          sender: currentUser.username,
-          roomId: selectedRoom.roomId,
-          content: trimmed,
-          createdAt: new Date().toISOString(),
-          })
-        );
-      }
+      sendRoomMessage(selectedRoom.roomId, trimmed);
     }
 
     setContent("");
@@ -262,7 +299,7 @@ export default function Chat() {
       <div className="flex flex-1">
         {/* LEFT PANEL */}
         <div className="w-80 border-r bg-white flex flex-col">
-              <div className="p-4 font-bold border-b">
+          <div className="p-4 font-bold border-b">
             {keyword.trim().length < 2 ? "Phòng của bạn" : "Users"}
           </div>
 
@@ -276,44 +313,42 @@ export default function Chat() {
           <div className="flex-1 overflow-auto">
             {keyword.trim().length < 2
               ? rooms.map((room) => (
-                  <div
-                    key={room.roomId}
-                    onClick={() => handleSelectRoom(room)}
-                    className={`p-4 cursor-pointer hover:bg-gray-100 ${
-                      selectedRoom?.roomId === room.roomId
-                        ? "bg-blue-50"
-                        : ""
+                <div
+                  key={room.roomId}
+                  onClick={() => handleSelectRoom(room)}
+                  className={`p-4 cursor-pointer hover:bg-gray-100 ${selectedRoom?.roomId === room.roomId
+                    ? "bg-blue-50"
+                    : ""
                     }`}
-                  >
-                    <div className="font-medium">
-                      {room.roomName}
-                    </div>
-                    <div className="text-sm text-gray-500">
-                      {room.roomId}
-                    </div>
+                >
+                  <div className="font-medium">
+                    {room.roomName}
                   </div>
-                ))
+                  <div className="text-sm text-gray-500">
+                    {room.roomId}
+                  </div>
+                </div>
+              ))
               : users.map((u) => (
-                  <div
-                    key={u.username}
-                    onClick={() => handleSelectUser(u)}
-                    className={`p-4 cursor-pointer hover:bg-gray-100 flex justify-between ${
-                      selectedUser?.username === u.username
-                        ? "bg-blue-50"
-                        : ""
+                <div
+                  key={u.username}
+                  onClick={() => handleSelectUser(u)}
+                  className={`p-4 cursor-pointer hover:bg-gray-100 flex justify-between ${selectedUser?.username === u.username
+                    ? "bg-blue-50"
+                    : ""
                     }`}
-                  >
-                    <div>
-                      <div>{u.username}</div>
-                      <div className="text-sm text-gray-500">
-                        {u.fullname}
-                      </div>
+                >
+                  <div>
+                    <div>{u.username}</div>
+                    <div className="text-sm text-gray-500">
+                      {u.fullname}
                     </div>
-                    {unreadSenders.has(u.username) && (
-                      <div className="w-3 h-3 bg-blue-500 rounded-full" />
-                    )}
                   </div>
-                ))}
+                  {unreadSenders.has(u.username) && (
+                    <div className="w-3 h-3 bg-blue-500 rounded-full" />
+                  )}
+                </div>
+              ))}
           </div>
         </div>
 
@@ -368,18 +403,16 @@ export default function Chat() {
                     return (
                       <div
                         key={getMessageKey(msg)}
-                        className={`flex ${
-                          isMe
-                            ? "justify-end"
-                            : "justify-start"
-                        }`}
+                        className={`flex ${isMe
+                          ? "justify-end"
+                          : "justify-start"
+                          }`}
                       >
                         <div
-                          className={`max-w-[70%] px-4 py-2 rounded-xl ${
-                            isMe
-                              ? "bg-indigo-600 text-white"
-                              : "bg-white border"
-                          }`}
+                          className={`max-w-[70%] px-4 py-2 rounded-xl ${isMe
+                            ? "bg-indigo-600 text-white"
+                            : "bg-white border"
+                            }`}
                         >
                           <div>{msg.content}</div>
 

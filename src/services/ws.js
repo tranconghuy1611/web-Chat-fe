@@ -65,7 +65,7 @@ export const connectWebSocket = (onMessage) => {
   }
 
   stompClient = new Client({
-    brokerURL: `ws://localhost:8080/ws?username=${encodeURIComponent(
+    brokerURL: `ws://192.168.1.13:8080/ws?username=${encodeURIComponent(
       username
     )}&access_token=${encodeURIComponent(token)}`,
     connectHeaders: {
@@ -125,8 +125,7 @@ export const sendPrivateMessage = ({ receiver, roomId, content }) => {
   return true;
 };
 
-// Khớp backend: ChatController @MessageMapping("/chat.room") → STOMP /app/chat.room
-// Server broadcast: /topic/room/{roomId} (đã subscribe trong subscribeRoom)
+
 export const sendRoomMessage = (roomId, content) => {
   const frame = {
     destination: "/app/chat.room",

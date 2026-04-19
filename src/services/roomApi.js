@@ -1,23 +1,10 @@
-import axios from "axios";
-
-const ROOM_API = "http://localhost:8080/api/rooms";
+import axiosClient from "./axiosClient";
 
 // =====================
 // CREATE ROOM
 // =====================
 export const createRoom = async (roomData) => {
-    const token = localStorage.getItem("token");
-
-    if (!token) {
-        throw new Error("No token");
-    }
-
-    const res = await axios.post(`${ROOM_API}`, roomData, {
-        headers: {
-            Authorization: `Bearer ${token}`,
-        },
-    });
-
+    const res = await axiosClient.post("/rooms", roomData);
     return res.data;
 };
 
@@ -25,18 +12,7 @@ export const createRoom = async (roomData) => {
 // GET MY ROOMS (/me)
 // =====================
 export const getMyRooms = async () => {
-    const token = localStorage.getItem("token");
-
-    if (!token) {
-        throw new Error("No token");
-    }
-
-    const res = await axios.get(`${ROOM_API}/me`, {
-        headers: {
-            Authorization: `Bearer ${token}`,
-        },
-    });
-
+    const res = await axiosClient.get("/rooms/me");
     return res.data;
 };
 
@@ -44,38 +20,14 @@ export const getMyRooms = async () => {
 // GET ROOMS BY USER
 // =====================
 export const getRoomsByUser = async (username) => {
-    const token = localStorage.getItem("token");
-
-    if (!token) {
-        throw new Error("No token");
-    }
-
-    const res = await axios.get(`${ROOM_API}/${username}`, {
-        headers: {
-            Authorization: `Bearer ${token}`,
-        },
-    });
-
+    const res = await axiosClient.get(`/rooms/${username}`);
     return res.data;
 };
+
 // =====================
 // GET ROOM MESSAGES
 // =====================
 export const getRoomMessages = async (roomId) => {
-    const token = localStorage.getItem("token");
-
-    if (!token) {
-        throw new Error("No token");
-    }
-
-    const res = await axios.get(
-        `http://localhost:8080/api/messages/rooms/${roomId}`,
-        {
-            headers: {
-                Authorization: `Bearer ${token}`,
-            },
-        }
-    );
-
+    const res = await axiosClient.get(`/messages/rooms/${roomId}`);
     return res.data;
 };
