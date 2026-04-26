@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from "react";
 import axios from "axios";
 import Sidebar from "../components/chat/Sidebar";
+import { Users ,ArrowLeft} from "lucide-react";
 import {
   connectWebSocket,
   disconnectWebSocket,
@@ -10,9 +11,10 @@ import {
   unsubscribeAll,
 } from "../services/ws";
 import { getMe, searchUsers } from "../services/userApi";
-import { getMyRooms, getRoomMessages, createRoom } from "../services/roomApi";
+import { getMyRooms, getRoomMessages, createPrivateRoom } from "../services/roomApi";
 import { formatTime, formatDateLabel } from "../until/time.js";
-
+import CreateGroupModal from "../components/chat/CreateGroupModal.jsx";
+import { isPrivateRoom, isGroupRoom,getReceiverFromRoomId } from "../until/roomUtils";
 export default function Chat() {
   const [currentUser, setCurrentUser] = useState(null);
   const [selectedUser, setSelectedUser] = useState(null);
@@ -29,6 +31,7 @@ export default function Chat() {
   const selectedUserRef = useRef(null);
   const selectedRoomRef = useRef(null);
   const currentUserRef = useRef(null);
+  const [showChat, setShowChat] = useState(false);
   let lastDate = null;
 
 
@@ -39,6 +42,9 @@ export default function Chat() {
     m.id ||
     `${m.sender}|${m.receiver || ""}|${m.roomId || ""}|${m.content}|${m.createdAt || ""
     }`;
+  const [showCreateGroup, setShowCreateGroup] = useState(false);
+
+  // thêm handler
 
   const appendUniqueMessage = (prev, msg) => {
     const key = getMessageKey(msg);
@@ -150,15 +156,19 @@ export default function Chat() {
 
     const timer = setTimeout(async () => {
       try {
-        const data = await searchUsers(q); // ✅ bỏ token
-        setUsers(data); // ✅ không .data nữa
+        const data = await searchUsers(q);
+        // ✅ Lọc bỏ chính mình khỏi kết quả
+        const filtered = data.filter(
+          (u) => u.username !== currentUser?.username
+        );
+        setUsers(filtered);
       } catch (err) {
         console.error(err);
       }
     }, 400);
 
     return () => clearTimeout(timer);
-  }, [keyword]);
+  }, [keyword, currentUser]);
 
   // ================= LOAD ROOMS =================
   useEffect(() => {
@@ -221,10 +231,8 @@ export default function Chat() {
     // ❌ Nếu chưa có room → tạo
     if (!matchedPrivateRoom) {
       try {
-        const newRoom = await createRoom({
-          roomName: `${currentUser.username}-${user.username}`,
-          users: [currentUser.username, user.username],
-        });
+        // ✅ Chỉ truyền string
+        const newRoom = await createPrivateRoom(user.username);
 
         matchedPrivateRoom = {
           roomId: newRoom.roomId,
@@ -255,45 +263,72 @@ export default function Chat() {
       return newSet;
     });
   };
+  const handleGroupCreated = (newGroup) => {
+    setRooms((prev) => [...prev, newGroup]);
+    handleSelectRoom(newGroup);
+  };
 
   // ================= SEND MESSAGE =================
   const handleSend = () => {
     const trimmed = content.trim();
-    if (!trimmed || !currentUser) return;
-    if (selectedUser && !selectedRoom) {
-      console.warn("Room chưa sẵn sàng");
-      return;
-    }
-    // PRIVATE
-    if (selectedUser) {
+    if (!trimmed || !currentUser || !selectedRoom) return;
+
+    if (isPrivateRoom(selectedRoom.roomId)) {
+      // ✅ Lấy receiver từ roomId, không cần selectedUser
+      const receiver = getReceiverFromRoomId(
+        selectedRoom.roomId,
+        currentUser.username
+      );
+      if (!receiver) return;
+
       sendPrivateMessage({
-        receiver: selectedUser.username,
-        roomId: selectedRoom?.roomId, // ✅ truyền null nếu chưa có room
+        receiver,
+        roomId: selectedRoom.roomId,
         content: trimmed,
       });
-    }
-
-    // ROOM
-    else if (selectedRoom) {
+    } else if (isGroupRoom(selectedRoom.roomId)) {
       sendRoomMessage(selectedRoom.roomId, trimmed);
+    } else {
+      // fallback room cũ
+      if (selectedUser) {
+        sendPrivateMessage({
+          receiver: selectedUser.username,
+          roomId: selectedRoom.roomId,
+          content: trimmed,
+        });
+      } else {
+        sendRoomMessage(selectedRoom.roomId, trimmed);
+      }
     }
 
     setContent("");
   };
 
   return (
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-gray-50 overflow-hidden">
       <Sidebar />
 
       <div className="flex flex-1 overflow-hidden">
-        {/* LEFT PANEL */}
-        <div className="w-72 border-r bg-white flex flex-col">
 
-          {/* Header */}
+        {/* LEFT PANEL */}
+        <div className={`
+          border-r bg-white flex flex-col
+          w-full md:w-72
+          ${showChat ? "hidden md:flex" : "flex"}
+        `}>
           <div className="px-4 pt-5 pb-3 border-b">
-            <h2 className="text-base font-semibold text-gray-800 mb-3">
-              {keyword.trim().length < 2 ? "Tin nhắn" : "Người dùng"}
-            </h2>
+            <div className="flex items-center justify-between mb-3 pl-12 md:pl-5">
+              <h2 className="text-base font-semibold text-gray-800">
+                {keyword.trim().length < 2 ? "Tin nhắn" : "Người dùng"}
+              </h2>
+              <button
+                onClick={() => setShowCreateGroup(true)}
+                className="w-7 h-7 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-400 transition"
+                title="Tạo nhóm"
+              >
+                <Users size={15} />
+              </button>
+            </div>
             <div className="flex items-center gap-2 bg-gray-100 rounded-xl px-3 py-2">
               <svg className="w-4 h-4 text-gray-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                 <circle cx="11" cy="11" r="8" /><path d="m21 21-4.35-4.35" />
@@ -307,15 +342,13 @@ export default function Chat() {
             </div>
           </div>
 
-          {/* List */}
           <div className="flex-1 overflow-auto divide-y divide-gray-50">
             {keyword.trim().length < 2
               ? rooms.map((room) => (
                 <div
                   key={room.roomId}
-                  onClick={() => handleSelectRoom(room)}
-                  className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors ${selectedRoom?.roomId === room.roomId ? "bg-indigo-50" : ""
-                    }`}
+                  onClick={() => { handleSelectRoom(room); setShowChat(true); }}
+                  className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors ${selectedRoom?.roomId === room.roomId ? "bg-indigo-50" : ""}`}
                 >
                   <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-sm font-medium shrink-0">
                     {room.roomName?.slice(0, 2).toUpperCase()}
@@ -329,9 +362,8 @@ export default function Chat() {
               : users.map((u) => (
                 <div
                   key={u.username}
-                  onClick={() => handleSelectUser(u)}
-                  className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors ${selectedUser?.username === u.username ? "bg-indigo-50" : ""
-                    }`}
+                  onClick={() => { handleSelectUser(u); setShowChat(true); }}
+                  className={`flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 transition-colors ${selectedUser?.username === u.username ? "bg-indigo-50" : ""}`}
                 >
                   <div className="relative">
                     <div className="w-10 h-10 rounded-full bg-violet-100 text-violet-600 flex items-center justify-center text-sm font-medium shrink-0">
@@ -351,7 +383,10 @@ export default function Chat() {
         </div>
 
         {/* CHAT AREA */}
-        <div className="flex-1 flex flex-col min-w-0">
+        <div className={`
+          flex-1 flex flex-col min-w-0
+          ${showChat ? "flex" : "hidden md:flex"}
+        `}>
           {!selectedUser && !selectedRoom ? (
             <div className="flex-1 flex flex-col items-center justify-center gap-3 text-gray-400">
               <div className="w-14 h-14 rounded-2xl bg-gray-100 flex items-center justify-center">
@@ -363,8 +398,14 @@ export default function Chat() {
             </div>
           ) : (
             <>
-              {/* HEADER */}
-              <div className="flex items-center gap-3 px-5 py-3 border-b bg-white">
+              {/* HEADER — thêm nút back cho mobile */}
+              <div className="flex items-center gap-3 px-5 py-3 border-b bg-white pl-12 md:pl-5">
+                <button
+                  onClick={() => setShowChat(false)}
+                  className="md:hidden w-8 h-8 rounded-lg hover:bg-gray-100 flex items-center justify-center text-gray-500 transition-colors"
+                >
+                  <ArrowLeft size={18} />
+                </button>
                 <div className="w-9 h-9 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-sm font-medium shrink-0">
                   {(selectedUser ? selectedUser.username : selectedRoom.roomName)?.slice(0, 2).toUpperCase()}
                 </div>
@@ -390,38 +431,26 @@ export default function Chat() {
                 </div>
               </div>
 
-              {/* MESSAGES */}
+              {/* MESSAGES — giữ nguyên */}
               <div className="flex-1 overflow-auto px-5 py-4 space-y-3 bg-gray-50">
                 {sortedMessages
                   .filter((m) => {
                     if (selectedUser) {
                       return (
-                        (m.sender === currentUser?.username &&
-                          m.receiver === selectedUser.username) ||
-                        (m.sender === selectedUser.username &&
-                          m.receiver === currentUser?.username)
+                        (m.sender === currentUser?.username && m.receiver === selectedUser.username) ||
+                        (m.sender === selectedUser.username && m.receiver === currentUser?.username)
                       );
                     }
-                    if (selectedRoom) {
-                      return m.roomId === selectedRoom.roomId;
-                    }
+                    if (selectedRoom) return m.roomId === selectedRoom.roomId;
                     return false;
                   })
                   .map((msg, index, arr) => {
                     const isMe = msg.sender === currentUser?.username;
-
-                    // 🧠 check ngày trước đó
                     const currentDate = new Date(msg.createdAt).toDateString();
-                    const prevDate =
-                      index > 0
-                        ? new Date(arr[index - 1].createdAt).toDateString()
-                        : null;
-
+                    const prevDate = index > 0 ? new Date(arr[index - 1].createdAt).toDateString() : null;
                     const showDateDivider = currentDate !== prevDate;
-
                     return (
                       <div key={getMessageKey(msg)}>
-                        {/* ✅ Divider ngày */}
                         {showDateDivider && (
                           <div className="text-center my-3">
                             <span className="text-xs px-3 py-1 bg-gray-200 rounded-full text-gray-600">
@@ -429,39 +458,20 @@ export default function Chat() {
                             </span>
                           </div>
                         )}
-
-                        {/* 💬 Message */}
-                        <div
-                          className={`flex gap-2 items-end ${isMe ? "flex-row-reverse" : ""
-                            }`}
-                        >
+                        <div className={`flex gap-2 items-end ${isMe ? "flex-row-reverse" : ""}`}>
                           {!isMe && (
                             <div className="w-7 h-7 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs font-medium shrink-0">
                               {msg.sender?.slice(0, 2).toUpperCase()}
                             </div>
                           )}
-
-                          <div
-                            className={`max-w-[65%] px-4 py-2.5 text-sm leading-relaxed ${isMe
-                                ? "bg-indigo-600 text-white rounded-2xl rounded-br-sm"
-                                : "bg-white border border-gray-100 text-gray-800 rounded-2xl rounded-bl-sm"
-                              }`}
-                          >
+                          <div className={`max-w-[75%] md:max-w-[65%] px-4 py-2.5 text-sm leading-relaxed ${isMe
+                            ? "bg-indigo-600 text-white rounded-2xl rounded-br-sm"
+                            : "bg-white border border-gray-100 text-gray-800 rounded-2xl rounded-bl-sm"}`}>
                             {selectedRoom && !isMe && (
-                              <p className="text-xs font-medium mb-1 opacity-60">
-                                {msg.sender}
-                              </p>
+                              <p className="text-xs font-medium mb-1 opacity-60">{msg.sender}</p>
                             )}
-
                             {msg.content}
-
-                            {/* 🕒 giờ */}
-                            <p
-                              className={`text-[10px] mt-1 ${isMe
-                                  ? "text-white/70 text-right"
-                                  : "text-gray-400 text-left"
-                                }`}
-                            >
+                            <p className={`text-[10px] mt-1 ${isMe ? "text-white/70 text-right" : "text-gray-400 text-left"}`}>
                               {msg.createdAt && formatTime(msg.createdAt)}
                             </p>
                           </div>
@@ -471,7 +481,7 @@ export default function Chat() {
                   })}
               </div>
 
-              {/* INPUT */}
+              {/* INPUT — giữ nguyên */}
               <div className="px-4 py-3 border-t bg-white flex items-center gap-2">
                 <button className="w-8 h-8 rounded-full hover:bg-gray-100 flex items-center justify-center text-gray-400 transition-colors shrink-0">
                   <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -506,6 +516,14 @@ export default function Chat() {
           )}
         </div>
       </div>
+
+      {showCreateGroup && (
+        <CreateGroupModal
+          currentUser={currentUser}
+          onCreated={handleGroupCreated}
+          onClose={() => setShowCreateGroup(false)}
+        />
+      )}
     </div>
   );
-}
+} 

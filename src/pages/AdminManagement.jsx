@@ -11,6 +11,7 @@ import {
   updateGroup,
 } from "../services/adminGroupApi";
 import UsersPage from "../components/admin/UsersPage";
+import CreateGroupModal from "../components/chat/CreateGroupModal";
 function StatusPill({ role }) {
   const isAdmin = role === "admin";
   return (
@@ -33,7 +34,7 @@ function GroupsPage() {
   const [showGroupModal, setShowGroupModal] = useState(false);
   const [groupModalMode, setGroupModalMode] = useState("create");
   const [showMemberModal, setShowMemberModal] = useState(false);
-
+  const [showCreateModal, setShowCreateModal] = useState(false);
   const selected = useMemo(
     () => groups.find((g) => g.id === selectedId) || null,
     [groups, selectedId]
@@ -101,6 +102,27 @@ function GroupsPage() {
       setSaving(false);
     }
   };
+  const handleCreateGroupWithMembers = async (groupName, usernames) => {
+    try {
+      setSaving(true);
+
+      const roomId = `room-${Date.now()}`;
+
+      await createGroup({
+        roomId,
+        roomName: groupName,
+        users: usernames, // 🔥 danh sách member
+      });
+
+      setShowCreateModal(false);
+      await loadGroups();
+
+    } catch (err) {
+      setError(err?.response?.data?.message || "Không tạo được nhóm");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const handleAddMember = async ({ username }) => {
     if (!selectedId) return;
@@ -135,10 +157,7 @@ function GroupsPage() {
         <div className="flex items-center justify-between mb-1">
           <span className="text-[13px] font-semibold text-slate-700">Nhóm</span>
           <button
-            onClick={() => {
-              setGroupModalMode("create");
-              setShowGroupModal(true);
-            }}
+            onClick={() => setShowCreateModal(true)}
             className="bg-blue-600 text-white text-[11px] font-medium px-2.5 py-1 rounded-lg hover:bg-blue-700 transition-colors"
           >
             Tạo nhóm
@@ -149,8 +168,8 @@ function GroupsPage() {
             key={g.id}
             onClick={() => setSelectedId(g.id)}
             className={`w-full text-left px-3.5 py-3 rounded-xl border transition-all ${g.id === selectedId
-                ? "border-blue-200 bg-blue-50"
-                : "border-slate-100 bg-white hover:border-slate-200"
+              ? "border-blue-200 bg-blue-50"
+              : "border-slate-100 bg-white hover:border-slate-200"
               }`}
           >
             <div className="text-[13px] font-semibold text-slate-700">{g.name}</div>
@@ -252,15 +271,6 @@ function GroupsPage() {
         </div>
       )}
 
-      <GroupFormModal
-        key={`${groupModalMode}-${selected?.id || "new"}-${showGroupModal ? "open" : "closed"}`}
-        open={showGroupModal}
-        mode={groupModalMode}
-        group={selected ? { name: selected.name, description: selected.desc } : null}
-        onClose={() => setShowGroupModal(false)}
-        onSubmit={handleCreateOrUpdateGroup}
-        loading={saving}
-      />
 
       <MemberFormModal
         open={showMemberModal}
@@ -268,6 +278,14 @@ function GroupsPage() {
         onSubmit={handleAddMember}
         loading={saving}
       />
+      {showCreateModal && (
+        <CreateGroupModal
+          currentUser={{ username: "admin" }}
+          onSubmit={handleCreateGroupWithMembers}   // ← thêm dòng này
+          onCreated={() => loadGroups()}
+          onClose={() => setShowCreateModal(false)}
+        />
+      )}
     </div>
   );
 }
@@ -280,7 +298,7 @@ export default function AdminManagement() {
       <SidebarAdmin active={activePage} onNav={setActivePage} />
       <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         <header className="h-14 bg-white border-b border-slate-100 flex items-center px-6">
-          <h1 className="text-[15px] font-semibold text-slate-800"> 
+          <h1 className="text-[15px] font-semibold text-slate-800">
             {activePage === "groups" ? "Quản lý nhóm" : "Quản lý người dùng"}
           </h1>
         </header>

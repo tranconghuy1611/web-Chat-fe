@@ -65,7 +65,8 @@ export const connectWebSocket = (onMessage) => {
   }
 
   stompClient = new Client({
-    brokerURL: `ws://192.168.1.13:8080/ws?username=${encodeURIComponent(
+    // brokerURL: `ws://192.168.1.12:8080/ws?username=${encodeURIComponent(
+      brokerURL: `ws://129.212.239.252:8080/ws?username=${encodeURIComponent(
       username
     )}&access_token=${encodeURIComponent(token)}`,
     connectHeaders: {

@@ -11,11 +11,17 @@ export const getAllGroups = async () => {
 // =====================
 // CREATE GROUP
 // =====================
-export const createGroup = async (payload) => {
-    const res = await axiosClient.post("/rooms", payload);
+// roomApi.js - tạo private
+export const createPrivateRoom = async (targetUsername) => {
+    const res = await axiosClient.post("/rooms/private", { targetUsername });
     return res.data;
 };
 
+// groupApi.js - tạo nhóm
+export const createGroup = async (payload) => {
+    const res = await axiosClient.post("/rooms/group", payload);
+    return res.data;
+};
 // =====================
 // UPDATE GROUP
 // =====================

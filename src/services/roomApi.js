@@ -3,8 +3,8 @@ import axiosClient from "./axiosClient";
 // =====================
 // CREATE ROOM
 // =====================
-export const createRoom = async (roomData) => {
-    const res = await axiosClient.post("/rooms", roomData);
+export const createPrivateRoom = async (targetUsername) => {
+    const res = await axiosClient.post("/rooms/private", { targetUsername });
     return res.data;
 };
 
